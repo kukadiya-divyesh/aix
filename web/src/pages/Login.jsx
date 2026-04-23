@@ -32,14 +32,14 @@ const Login = ({ onLogin }) => {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: '#0f172a',
-      color: 'white'
+      backgroundColor: 'var(--bg-dark)',
+      color: 'var(--text-main)'
     }}>
       <div className="glass animate-fade-in" style={{ width: '400px', padding: '3rem', textAlign: 'center' }}>
         <div style={{
           width: '48px',
           height: '48px',
-          backgroundColor: '#d32f2f',
+          backgroundColor: 'var(--primary)',
           borderRadius: '10px',
           display: 'flex',
           alignItems: 'center',
@@ -50,7 +50,7 @@ const Login = ({ onLogin }) => {
         </div>
         
         <h1 style={{ fontSize: '1.8rem', fontWeight: 800, marginBottom: '0.5rem' }}>AIX SMART</h1>
-        <p style={{ color: '#94a3b8', marginBottom: '2.5rem', fontSize: '14px' }}>Log in to access inventory operations</p>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '2.5rem', fontSize: '14px' }}>Log in to access inventory operations</p>
 
         {error && (
           <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '0.8rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '13px' }}>
@@ -96,7 +96,7 @@ const Login = ({ onLogin }) => {
           </button>
         </form>
 
-        <p style={{ marginTop: '2rem', fontSize: '12px', color: '#64748b' }}>
+        <p style={{ marginTop: '2rem', fontSize: '12px', color: 'var(--text-muted)' }}>
           Inventory Management Terminal v1.0.0
         </p>
       </div>
@@ -104,8 +104,8 @@ const Login = ({ onLogin }) => {
   );
 };
 
-const labelStyle = { display: 'block', marginBottom: '0.5rem', fontSize: '12px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' };
-const inputStyle = { width: '100%', padding: '0.8rem 0.8rem 0.8rem 2.8rem', color: 'white', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' };
-const iconStyle = { position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' };
+const labelStyle = { display: 'block', marginBottom: '0.5rem', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' };
+const inputStyle = { width: '100%', padding: '0.8rem 0.8rem 0.8rem 2.8rem', color: 'var(--text-main)', border: '1px solid var(--border)', borderRadius: '8px', backgroundColor: 'var(--bg-card)' };
+const iconStyle = { position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' };
 
 export default Login;
