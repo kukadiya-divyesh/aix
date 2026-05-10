@@ -27,7 +27,7 @@ export const createOutboundFromInbound = async (req, res) => {
         inboundId: parseInt(inboundId),
         customerName,
         demandQty: parseInt(demandQty),
-        status: 'OPEN',
+        status: 'IN_PROCESS',
         lines: {
           create: lines.map(line => ({
             flightNo: line.flight_no,
@@ -109,7 +109,7 @@ export const getOutbounds = async (req, res) => {
  */
 export const createLedgerEntry = async (req, res) => {
   const { inboundId } = req.params;
-  const { flightNo, sbNo, quantityIssued, date } = req.body;
+  const { flightNo, sbNo, quantityIssued, noOfBoxes, date, assignedUserId } = req.body;
 
   try {
     const inbound = await prisma.inbound.findUnique({
@@ -152,9 +152,16 @@ export const createLedgerEntry = async (req, res) => {
         data: {
           inboundId: parseInt(inboundId),
           customerName: 'STOCK ISSUANCE',
-          demandQty: 0, // We'll update this or use it as a placeholder
-          status: 'PARTIAL'
+          demandQty: 0, 
+          status: 'IN_PROCESS',
+          assignedUserId: assignedUserId ? parseInt(assignedUserId) : null
         }
+      });
+    } else if (assignedUserId) {
+      // Update assigned user if changed in popup
+      await prisma.outbound.update({
+        where: { id: outbound.id },
+        data: { assignedUserId: parseInt(assignedUserId) }
       });
     }
 
@@ -166,6 +173,7 @@ export const createLedgerEntry = async (req, res) => {
         flightNo,
         sbNo,
         quantityIssued: parseInt(quantityIssued),
+        noOfBoxes: parseInt(noOfBoxes || 1),
         balance: newBalance,
         status: 'PENDING',
         postedByUserId: req.user.id
@@ -205,6 +213,129 @@ export const finalizeLedgerEntry = async (req, res) => {
       data: { status: 'DISPATCHED' }
     });
     res.json(line);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+/**
+ * @desc    Update Outbound status or details
+ * @route   PUT /api/outbound/:id
+ */
+export const updateOutbound = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, customerName, demandQty, assignedUserId } = req.body;
+
+    const updated = await prisma.outbound.update({
+      where: { id: parseInt(id) },
+      data: {
+        status,
+        customerName,
+        demandQty: demandQty ? parseInt(demandQty) : undefined,
+        assignedUserId: assignedUserId ? parseInt(assignedUserId) : undefined
+      }
+    });
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Report an exception for an outbound line
+ * @route   POST /api/outbound/exceptions/:lineId
+ */
+export const reportOutboundException = async (req, res) => {
+  try {
+    const { lineId } = req.params;
+    const { note, image } = req.body;
+
+    const exception = await prisma.exception.create({
+      data: {
+        note,
+        image,
+        outboundLineId: parseInt(lineId),
+        userId: req.user.id
+      }
+    });
+
+    res.status(201).json(exception);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Get exceptions for an outbound line
+ * @route   GET /api/outbound/exceptions/:lineId
+ */
+export const getOutboundExceptions = async (req, res) => {
+  try {
+    const { lineId } = req.params;
+    const exceptions = await prisma.exception.findMany({
+      where: { outboundLineId: parseInt(lineId) },
+      include: { 
+        user: { select: { name: true } },
+        resolvedBy: { select: { name: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(exceptions);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Get all outbound lines (flattened view)
+ * @route   GET /api/outbound/lines
+ */
+export const getOutboundLines = async (req, res) => {
+  const { search, page = 1 } = req.query;
+  const limit = 50;
+  const skip = (parseInt(page) - 1) * limit;
+
+  try {
+    let where = {};
+    if (search) {
+      where = {
+        OR: [
+          { flightNo: { contains: search, mode: 'insensitive' } },
+          { sbNo: { contains: search, mode: 'insensitive' } },
+          { outbound: { inbound: { po_no: { contains: search, mode: 'insensitive' } } } }
+        ]
+      };
+    }
+
+    const [data, total] = await Promise.all([
+      prisma.outboundLine.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          outbound: {
+            include: {
+              inbound: { select: { po_no: true, product_description: true } },
+              assignedUser: { select: { name: true } }
+            }
+          },
+          postedBy: { select: { name: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.outboundLine.count({ where })
+    ]);
+
+    res.json({
+      data,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

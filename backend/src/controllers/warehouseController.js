@@ -66,7 +66,11 @@ export const updateWarehouse = async (req, res) => {
  */
 export const getAllSheds = async (req, res) => {
   try {
+    const where = req.user.role === 'ADMIN' ? {} : {
+      warehouseId: { in: req.user.warehouseAccess.map(w => w.id) }
+    };
     const sheds = await prisma.shed.findMany({
+      where,
       include: { warehouse: { select: { name: true } }, _count: { select: { grids: true } } }
     });
     res.json(sheds);
@@ -81,7 +85,13 @@ export const getAllSheds = async (req, res) => {
  */
 export const getAllGrids = async (req, res) => {
   try {
+    const where = req.user.role === 'ADMIN' ? {} : {
+      shed: {
+        warehouseId: { in: req.user.warehouseAccess.map(w => w.id) }
+      }
+    };
     const grids = await prisma.grid.findMany({
+      where,
       include: { shed: { include: { warehouse: { select: { name: true } } } } }
     });
     res.json(grids);

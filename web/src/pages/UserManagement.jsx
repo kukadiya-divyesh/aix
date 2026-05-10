@@ -25,7 +25,7 @@ const UserManagement = () => {
     name: '',
     email: '',
     password: '',
-    role: 'LOCATION_USER',
+    role: 'LOCAL',
     warehouseIds: []
   });
 
@@ -74,7 +74,7 @@ const UserManagement = () => {
       }
       setShowForm(false);
       setEditingUser(null);
-      setFormData({ name: '', email: '', password: '', role: 'LOCATION_USER', warehouseIds: [] });
+      setFormData({ name: '', email: '', password: '', role: 'LOCAL', warehouseIds: [] });
       fetchUsers();
     } catch (err) {
       alert(err.response?.data?.message || 'Action failed');
@@ -98,6 +98,7 @@ const UserManagement = () => {
     setFormData({
       name: user.name,
       email: user.email,
+      password: '', // Clear password field on edit
       role: user.role,
       warehouseIds: user.warehouseAccess?.map(w => w.id) || []
     });
@@ -106,10 +107,10 @@ const UserManagement = () => {
 
   return (
     <div style={{ padding: '2rem' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <div>
-          <h1 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>System User Configuration</h1>
-          <p style={{ color: '#94a3b8' }}>Manage user accounts and warehouse-level access permissions.</p>
+      <header className="module-header">
+        <div className="header-info">
+          <h1 className="po-title" style={{ fontSize: '2rem' }}>System User Configuration</h1>
+          <p style={{ color: '#94a3b8', fontSize: '13px' }}>Manage user accounts and warehouse-level access permissions.</p>
         </div>
         {!showForm && (
           <button className="btn btn-primary" onClick={() => setShowForm(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -125,7 +126,7 @@ const UserManagement = () => {
             {editingUser ? `Edit User: ${editingUser.name}` : 'Create New Account'}
           </h2>
           <form onSubmit={handleSubmit}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.5rem' }}>
+            <div className="grid-responsive" style={{ gap: '1.5rem' }}>
               <div>
                 <label style={labelStyle}><UserIcon size={14} /> Full Name</label>
                 <input className="glass" style={inputStyle} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
@@ -134,17 +135,16 @@ const UserManagement = () => {
                 <label style={labelStyle}><Mail size={14} /> Email Address</label>
                 <input className="glass" style={inputStyle} type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required />
               </div>
-              {!editingUser && (
-                <div>
-                  <label style={labelStyle}><Lock size={14} /> Password</label>
-                  <input className="glass" style={inputStyle} type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} required />
-                </div>
-              )}
+              <div>
+                <label style={labelStyle}><Lock size={14} /> {editingUser ? 'New Password (Optional)' : 'Password'}</label>
+                <input className="glass" style={inputStyle} type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} placeholder={editingUser ? "Leave blank to keep current" : "Enter password"} required={!editingUser} />
+              </div>
               <div>
                 <label style={labelStyle}><Shield size={14} /> System Role</label>
                 <select className="glass" style={inputStyle} value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
                   <option value="ADMIN">ADMIN (Full Access)</option>
-                  <option value="LOCATION_USER">LOCATION_USER (Specific Access Only)</option>
+                  <option value="GLOBAL">GLOBAL (Read Only)</option>
+                  <option value="LOCAL">LOCAL (Read & Write)</option>
                 </select>
               </div>
             </div>
@@ -187,8 +187,8 @@ const UserManagement = () => {
         </div>
       )}
 
-      <div className="glass" style={{ padding: '0', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+      <div className="table-responsive glass" style={{ padding: '0', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
           <thead style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8', fontSize: '13px' }}>
             <tr>
               <th style={thStyle}>USER</th>
@@ -257,7 +257,7 @@ const UserManagement = () => {
 const thStyle = { padding: '1.2rem 1.5rem', fontWeight: 700 };
 const tdStyle = { padding: '1rem 1.5rem' };
 const labelStyle = { display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '13px', color: '#94a3b8', fontWeight: 600 };
-const inputStyle = { width: '100%', padding: '0.8rem', color: 'white', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', backgroundColor: 'transparent' };
+const inputStyle = { width: '100%', padding: '0.8rem', color: 'var(--text-main)', border: '1px solid var(--border)', borderRadius: '6px', backgroundColor: 'rgba(0,0,0,0.02)', outline: 'none' };
 const actionBtnStyle = { background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' };
 
 export default UserManagement;

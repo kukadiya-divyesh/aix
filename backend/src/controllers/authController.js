@@ -8,17 +8,24 @@ import prisma from '../config/prisma.js';
  */
 export const login = async (req, res) => {
   const { email, password } = req.body;
+  const cleanEmail = email?.trim().toLowerCase();
+  const cleanPassword = password?.trim();
+
+  console.log(`DEBUG: Login attempt for: ${cleanEmail}`);
 
   try {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
     if (!user) {
+      console.warn(`DEBUG: User not found: ${cleanEmail}`);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(cleanPassword, user.password);
     if (!isMatch) {
+      console.warn(`DEBUG: Password mismatch for: ${cleanEmail}`);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
+
 
     const token = jwt.sign(
       { id: user.id, role: user.role },
@@ -105,19 +112,25 @@ export const getUsers = async (req, res) => {
  */
 export const updateUserAccess = async (req, res) => {
   const { id } = req.params;
-  const { name, email, role, warehouseIds } = req.body;
+  const { name, email, role, warehouseIds, password } = req.body;
 
   try {
+    const updateData = {
+      name,
+      email,
+      role,
+      warehouseAccess: {
+        set: warehouseIds.map(wId => ({ id: parseInt(wId) }))
+      }
+    };
+
+    if (password && password.trim() !== "") {
+      updateData.password = await bcrypt.hash(password, 10);
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: parseInt(id) },
-      data: {
-        name,
-        email,
-        role,
-        warehouseAccess: {
-          set: warehouseIds.map(wId => ({ id: parseInt(wId) }))
-        }
-      },
+      data: updateData,
       include: {
         warehouseAccess: true
       }

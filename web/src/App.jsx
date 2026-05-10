@@ -9,6 +9,7 @@ import InboundModule from './pages/InboundModule';
 import OutboundModule from './pages/OutboundModule';
 import ExceptionList from './pages/ExceptionList';
 import UserManagement from './pages/UserManagement';
+import ReportsModule from './pages/ReportsModule';
 
 // Add JWT to all axios requests
 axios.interceptors.request.use(config => {
@@ -20,20 +21,32 @@ axios.interceptors.request.use(config => {
 });
 
 const Layout = ({ user, onLogout, children }) => (
-  <div style={{ display: 'flex' }}>
+  <div style={{ display: 'flex', flexDirection: 'column' }}>
     <Sidebar user={user} onLogout={onLogout} />
-    <main style={{ 
-      flex: 1, 
-      marginLeft: '260px', 
-      minHeight: '100vh', 
-      backgroundColor: 'var(--bg-dark)',
-      color: 'var(--text-main)',
-      width: 'calc(100% - 260px)'
-    }}>
+    <main className="main-content">
       {children}
     </main>
+    <style>{`
+      .main-content {
+        flex: 1;
+        margin-left: 260px;
+        min-height: 100vh;
+        background-color: var(--bg-dark);
+        color: var(--text-main);
+        width: calc(100% - 260px);
+        transition: margin-left 0.3s ease, width 0.3s ease;
+      }
+      @media (max-width: 1024px) {
+        .main-content {
+          margin-left: 0;
+          width: 100%;
+          padding-top: 60px; /* Space for mobile header */
+        }
+      }
+    `}</style>
   </div>
 );
+
 
 import { FeedbackProvider } from './components/FeedbackProvider';
 
@@ -81,6 +94,7 @@ function App() {
             <Route path="/exceptions" element={<ExceptionList />} />
             <Route path="/warehouses" element={<WarehouseMaster />} />
             <Route path="/settings" element={<UserManagement />} />
+            <Route path="/reports" element={<ReportsModule />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Layout>

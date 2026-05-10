@@ -8,45 +8,44 @@ datasource db {
 }
 
 model User {
-  id               Int                @id @default(autoincrement())
-  email            String             @unique
-  name             String
-  password         String
-  role             Role               @default(LOCATION_USER)
-  warehouseAccess Warehouse[]
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  exceptions       Exception[]
-  outboundLines    OutboundLine[]
-  inboundLogs      InboundLog[]
-}
-
-enum Role {
-  ADMIN
-  LOCATION_USER
+  id                Int            @id @default(autoincrement())
+  email             String         @unique
+  name              String
+  password          String
+  role              Role           @default(LOCAL)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  reportedExceptions Exception[]   @relation("ReportedBy")
+  resolvedExceptions Exception[]   @relation("ResolvedBy")
+  assignedInbounds  Inbound[]      @relation("AssignedInbound")
+  inboundLogs       InboundLog[]
+  assignedOutbounds Outbound[]     @relation("AssignedOutbound")
+  outboundLines     OutboundLine[]
+  auditLogs         AuditLog[]
+  warehouseAccess   Warehouse[]    @relation("UserToWarehouse")
 }
 
 model Warehouse {
   id        Int      @id @default(autoincrement())
   name      String
   city      String
-  image     String?
-  sheds     Shed[]
-  users     User[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  image     String?
+  sheds     Shed[]
+  users     User[]   @relation("UserToWarehouse")
 }
 
 model Shed {
-  id             Int            @id @default(autoincrement())
-  name           String
-  locationCode   String?
-  warehouseId    Int
-  warehouse      Warehouse      @relation(fields: [warehouseId], references: [id])
-  grids          Grid[]
-  serialNumbers  SerialNumber[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id            Int            @id @default(autoincrement())
+  name          String
+  locationCode  String?
+  warehouseId   Int
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  grids         Grid[]
+  serialNumbers SerialNumber[]
+  warehouse     Warehouse      @relation(fields: [warehouseId], references: [id])
 }
 
 model Grid {
@@ -57,42 +56,44 @@ model Grid {
   y             Float          @default(0)
   z             Float          @default(0)
   shedId        Int
-  shed          Shed           @relation(fields: [shedId], references: [id])
-  serialNumbers SerialNumber[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+  shed          Shed           @relation(fields: [shedId], references: [id])
+  serialNumbers SerialNumber[]
 }
 
 model Inbound {
   id                  Int            @id @default(autoincrement())
-  po_no              String         @unique
-  inv_no             String?
-  be_no              String?
-  igm_no             String?
-  cth_no             String?
-  awb_no             String?
-  total_value        Float?
-  duty               Float?
-  country_of_origin  String?
-  stock_no           String?
+  po_no               String         @unique
+  inv_no              String?
+  be_no               String?
+  igm_no              String?
+  cth_no              String?
+  awb_no              String?
+  total_value         Float?
+  duty                Float?
+  country_of_origin   String?
+  stock_no            String?
   product_description String?
-  quantity           Float
-  weight             Float?
-  no_of_box          Int
-  bond_date          DateTime?
-  bond_expiry_date   DateTime?
-  warehouse_location String?
-  per_box_weight_kg  Float?
-  pkg_details        String?
-  qty_per_box        Float
-  status             InboundStatus  @default(PENDING)
-  has_exception      Boolean        @default(false)
-  exceptions         Exception[]
-  serialNumbers      SerialNumber[]
-  outbounds          Outbound[]
-  logs               InboundLog[]
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  quantity            Float
+  weight              Float?
+  no_of_box           Int
+  bond_date           DateTime?
+  bond_expiry_date    DateTime?
+  warehouse_location  String?
+  per_box_weight_kg   Float?
+  pkg_details         String?
+  qty_per_box         Float
+  status              InboundStatus  @default(DRAFT)
+  has_exception       Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  assignedUserId      Int?
+  exceptions          Exception[]
+  assignedUser        User?          @relation("AssignedInbound", fields: [assignedUserId], references: [id])
+  logs                InboundLog[]
+  outbounds           Outbound[]
+  serialNumbers       SerialNumber[]
 }
 
 model InboundLog {
@@ -100,32 +101,103 @@ model InboundLog {
   action    String
   details   String?
   userId    Int
-  user      User     @relation(fields: [userId], references: [id])
   inboundId Int
-  inbound   Inbound  @relation(fields: [inboundId], references: [id])
   createdAt DateTime @default(now())
-}
-
-enum InboundStatus {
-  PENDING
-  PLACED
-  PARTIAL
-  EXCEPTION
+  inbound   Inbound  @relation(fields: [inboundId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 model SerialNumber {
-  id          Int       @id @default(autoincrement())
-  code        String    @unique
-  inboundId   Int
-  inbound     Inbound   @relation(fields: [inboundId], references: [id])
-  shedId      Int?
-  shed        Shed?     @relation(fields: [shedId], references: [id])
-  gridId      Int?
-  grid        Grid?     @relation(fields: [gridId], references: [id])
-  status      SNStatus  @default(PRINTED)
-  history     AuditLog[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id        Int        @id @default(autoincrement())
+  code      String     @unique
+  inboundId Int
+  shedId    Int?
+  gridId    Int?
+  status    SNStatus   @default(PRINTED)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  history   AuditLog[]
+  grid      Grid?      @relation(fields: [gridId], references: [id])
+  inbound         Inbound       @relation(fields: [inboundId], references: [id])
+  shed            Shed?         @relation(fields: [shedId], references: [id])
+  outboundLineId  Int?
+  outboundLine    OutboundLine? @relation(fields: [outboundLineId], references: [id])
+}
+
+model AuditLog {
+  id             Int          @id @default(autoincrement())
+  status         String
+  location       String?
+  timestamp      DateTime     @default(now())
+  serialNumberId Int
+  userId         Int?
+  user           User?        @relation(fields: [userId], references: [id])
+  serialNumber   SerialNumber @relation(fields: [serialNumberId], references: [id])
+}
+
+model Outbound {
+  id             Int            @id @default(autoincrement())
+  inboundId      Int
+  customerName   String?
+  demandQty      Int
+  status         OutboundStatus @default(IN_PROCESS)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  assignedUserId Int?
+  assignedUser   User?          @relation("AssignedOutbound", fields: [assignedUserId], references: [id])
+  inbound        Inbound        @relation(fields: [inboundId], references: [id])
+  lines          OutboundLine[]
+}
+
+model OutboundLine {
+  id             Int      @id @default(autoincrement())
+  date           DateTime @default(now())
+  flightNo       String?
+  sbNo           String?
+  quantityIssued Int
+  noOfBoxes      Int      @default(1)
+  balance        Int
+  postedByUserId Int
+  status         String   @default("pending")
+  scannedRfids   String[]
+  outboundId     Int
+  createdAt      DateTime       @default(now())
+  outbound       Outbound       @relation(fields: [outboundId], references: [id])
+  postedBy       User           @relation(fields: [postedByUserId], references: [id])
+  serialNumbers  SerialNumber[]
+  exceptions     Exception[]
+}
+
+model Exception {
+  id               Int       @id @default(autoincrement())
+  note             String
+  image            String?
+  inboundId        Int?
+  outboundLineId   Int?
+  userId           Int
+  createdAt        DateTime  @default(now())
+  resolvedAt       DateTime?
+  resolvedNote     String?
+  resolvedByUserId Int?
+  isResolved       Boolean   @default(false)
+
+  inbound      Inbound?      @relation(fields: [inboundId], references: [id])
+  outboundLine OutboundLine? @relation(fields: [outboundLineId], references: [id])
+  user         User          @relation("ReportedBy", fields: [userId], references: [id])
+  resolvedBy   User?         @relation("ResolvedBy", fields: [resolvedByUserId], references: [id])
+}
+
+enum Role {
+  ADMIN
+  GLOBAL
+  LOCAL
+}
+
+enum InboundStatus {
+  DRAFT
+  IN_PROCESS
+  DONE
+  EXCEPTION
 }
 
 enum SNStatus {
@@ -136,56 +208,7 @@ enum SNStatus {
   OUT_GATE
 }
 
-model AuditLog {
-  id             Int          @id @default(autoincrement())
-  status         String
-  location       String?
-  timestamp      DateTime     @default(now())
-  serialNumberId Int
-  serialNumber   SerialNumber @relation(fields: [serialNumberId], references: [id])
-}
-
-model Outbound {
-  id            Int            @id @default(autoincrement())
-  inboundId     Int
-  inbound       Inbound        @relation(fields: [inboundId], references: [id])
-  customerName  String?
-  demandQty     Int
-  status        OutboundStatus @default(OPEN)
-  lines         OutboundLine[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-}
-
 enum OutboundStatus {
-  OPEN
-  PARTIAL
-  CLOSED
-}
-
-model OutboundLine {
-  id              Int      @id @default(autoincrement())
-  date            DateTime @default(now())
-  flightNo        String?
-  sbNo            String?
-  quantityIssued  Int
-  balance         Int
-  postedByUserId  Int
-  postedBy        User     @relation(fields: [postedByUserId], references: [id])
-  status          String   @default("pending")
-  scannedRfids    String[]
-  outboundId      Int
-  outbound        Outbound @relation(fields: [outboundId], references: [id])
-  createdAt       DateTime @default(now())
-}
-
-model Exception {
-  id         Int      @id @default(autoincrement())
-  note       String
-  image      String?
-  inboundId  Int
-  inbound    Inbound  @relation(fields: [inboundId], references: [id])
-  userId     Int
-  user       User     @relation(fields: [userId], references: [id])
-  createdAt  DateTime @default(now())
+  IN_PROCESS
+  DONE
 }

@@ -84,7 +84,7 @@ const Dashboard = () => {
       </header>
 
       {view === 'global' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
           {warehouses.map(wh => (
             <div 
               key={wh.id} 
@@ -94,13 +94,13 @@ const Dashboard = () => {
             >
               <div style={{ height: '220px', background: 'rgba(255,255,255,0.03)', position: 'relative' }}>
                 {wh.image ? (
-                  <img src={wh.image} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={wh.image} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={wh.name} />
                 ) : (
                   <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Warehouse size={60} opacity={0.3} />
                   </div>
                 )}
-                <div style={{ position: 'absolute', bottom: '1rem', left: '1rem', background: 'rgba(0,0,0,0.6)', padding: '0.4rem 0.8rem', borderRadius: '20px', fontSize: '12px', backdropFilter: 'blur(4px)' }}>
+                <div style={{ position: 'absolute', bottom: '1rem', left: '1rem', background: 'rgba(0,0,0,0.6)', padding: '0.4rem 0.8rem', borderRadius: '20px', fontSize: '12px', backdropFilter: 'blur(4px)', color: 'white' }}>
                   <MapPin size={12} style={{ marginRight: '4px' }} /> {wh.city}
                 </div>
               </div>
@@ -117,7 +117,7 @@ const Dashboard = () => {
       )}
 
       {view === 'warehouse' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
           {selectedWarehouse?.sheds?.map(shed => (
             <div 
               key={shed.id} 
@@ -169,7 +169,20 @@ const Dashboard = () => {
       )}
 
       {view === 'location' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(400px, 1fr) 1.5fr', gap: '2rem' }}>
+        <div className="grid-responsive-layout">
+          <style>{`
+            .grid-responsive-layout {
+              display: grid;
+              grid-template-columns: minmax(300px, 1fr) 1.5fr;
+              gap: 2rem;
+            }
+            @media (max-width: 1200px) {
+              .grid-responsive-layout {
+                grid-template-columns: 1fr;
+              }
+            }
+          `}</style>
+
           {/* Location Reference Card */}
           <div className="glass shadow-lg" style={{ padding: '2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
              <header style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '1rem' }}>
@@ -273,32 +286,34 @@ const Dashboard = () => {
                       </div>
                    </div>
                    <div style={{ height: '700px', width: '100%', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', overflow: 'hidden' }}>
-                      <Warehouse3D shedId={selectedShed?.id} />
+                      <Warehouse3D data={stats?.gridDetails || []} />
                    </div>
                 </div>
              ) : (
                 <div className="glass" style={{ height: '100%', padding: '2rem' }}>
                    <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '2rem' }}>Slot Occupancy Map</h2>
                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '1rem' }}>
-                      {Array.from({ length: stats?.totalGrids || 20 }).map((_, i) => {
-                        const occupied = i < stats?.occupiedGrids;
-                        return (
-                          <div key={i} style={{ 
-                            width: '100px', 
-                            height: '100px', 
-                            borderRadius: '8px', 
-                            background: occupied ? 'rgba(211, 47, 47, 0.2)' : 'rgba(255,255,255,0.05)',
-                            border: `2px solid ${occupied ? '#d32f2f' : 'rgba(255,255,255,0.1)'}`,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.4rem'
-                          }}>
-                             <Box size={24} color={occupied ? '#ef4444' : '#64748b'} />
-                             <span style={{ fontSize: '10px', fontWeight: 800 }}>G-{(i+1).toString().padStart(3, '0')}</span>
-                          </div>
-                      )})}
+                      {(stats?.gridDetails || []).map((grid, i) => {
+                         const occupied = !!grid.product;
+                         return (
+                           <div key={grid.id || i} style={{ 
+                             width: '100px', 
+                             height: '100px', 
+                             borderRadius: '8px', 
+                             background: occupied ? 'rgba(211, 47, 47, 0.2)' : 'rgba(255,255,255,0.05)',
+                             border: `2px solid ${occupied ? '#d32f2f' : 'rgba(255,255,255,0.1)'}`,
+                             display: 'flex',
+                             flexDirection: 'column',
+                             alignItems: 'center',
+                             justifyContent: 'center',
+                             gap: '0.4rem',
+                             position: 'relative'
+                           }}>
+                              <Box size={24} color={occupied ? '#ef4444' : '#64748b'} />
+                              <span style={{ fontSize: '10px', fontWeight: 800 }}>{grid.code}</span>
+                              {occupied && <span style={{ fontSize: '9px', color: '#f8fafc', padding: '0 4px', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{grid.product}</span>}
+                           </div>
+                       )})}
                    </div>
                 </div>
              )}

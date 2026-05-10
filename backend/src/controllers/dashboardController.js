@@ -55,6 +55,17 @@ export const getShedStats = async (req, res) => {
       take: 5
     });
 
+    // 5. Grid Details for Digital Twin
+    const grids = await prisma.grid.findMany({
+      where: { shedId: sId },
+      include: {
+        serialNumbers: {
+          include: { inbound: { select: { po_no: true, product_description: true } } },
+          take: 1
+        }
+      }
+    });
+
     res.json({
       inboundToday,
       outboundToday,
@@ -68,6 +79,14 @@ export const getShedStats = async (req, res) => {
         reason: e.note,
         action: 'View',
         createdAt: e.createdAt
+      })),
+      gridDetails: grids.map(g => ({
+        id: g.id,
+        code: g.code,
+        x: g.x,
+        y: g.y,
+        z: g.z,
+        product: g.serialNumbers.length > 0 ? g.serialNumbers[0].inbound?.product_description || 'Occupied' : null
       }))
     });
   } catch (error) {
@@ -75,3 +94,83 @@ export const getShedStats = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+/**
+ * @desc    Get user-specific counts for Inbound/Outbound
+ * @route   GET /api/dashboard/user-tasks
+ */
+export const getUserTaskCounts = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const inboundCount = await prisma.inbound.count({
+      where: {
+        assignedUserId: userId,
+        status: { not: 'DONE' }
+      }
+    });
+
+    const outboundCount = await prisma.outboundLine.count({
+      where: {
+        outbound: { assignedUserId: userId },
+        status: { not: 'DISPATCHED' }
+      }
+    });
+
+    res.json({ inboundCount, outboundCount });
+  } catch (error) {
+    console.error('USER TASK COUNTS ERROR:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Get Inbound tasks assigned to user
+ * @route   GET /api/dashboard/tasks/inbound
+ */
+export const getUserInboundTasks = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const tasks = await prisma.inbound.findMany({
+      where: {
+        assignedUserId: userId,
+        status: { not: 'DONE' }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(tasks);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Get Outbound tasks assigned to user
+ * @route   GET /api/dashboard/tasks/outbound
+ */
+export const getUserOutboundTasks = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    // Find all OutboundLines belonging to Outbounds assigned to this user
+    const lines = await prisma.outboundLine.findMany({
+      where: {
+        outbound: { assignedUserId: userId },
+        status: { not: 'DISPATCHED' }
+      },
+      include: {
+        outbound: {
+          include: {
+            inbound: { select: { po_no: true, inv_no: true, product_description: true } }
+          }
+        },
+        exceptions: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(lines);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+

@@ -37,7 +37,8 @@ export const createInbound = async (req, res) => {
         per_box_weight_kg: parseFloat(data.per_box_weight_kg),
         pkg_details: data.pkg_details,
         qty_per_box: qty_per_box,
-        status: 'PENDING',
+        assignedUserId: data.assignedUserId ? parseInt(data.assignedUserId) : null,
+        status: 'DRAFT',
         logs: {
           create: {
             action: 'Record Created',
@@ -158,7 +159,8 @@ export const getInboundById = async (req, res) => {
         },
         _count: {
           select: { serialNumbers: true }
-        }
+        },
+        assignedUser: { select: { id: true, name: true } }
       }
     });
     if (!inbound) return res.status(404).json({ message: 'Record not found' });
@@ -207,6 +209,9 @@ export const updateInbound = async (req, res) => {
       pkg_details: rawData.pkg_details,
       bond_date: rawData.bond_date ? new Date(rawData.bond_date) : null,
       bond_expiry_date: rawData.bond_expiry_date ? new Date(rawData.bond_expiry_date) : null,
+      assignedUserId: rawData.assignedUserId ? parseInt(rawData.assignedUserId) : null,
+      status: rawData.status || undefined,
+      has_exception: rawData.has_exception !== undefined ? rawData.has_exception : undefined,
     };
 
     const changes = [];
@@ -287,6 +292,12 @@ export const generateTags = async (req, res) => {
 
     await prisma.serialNumber.createMany({ data: tags });
 
+    // Update status to IN_PROCESS
+    await prisma.inbound.update({
+      where: { id: parseInt(id) },
+      data: { status: 'IN_PROCESS' }
+    });
+
     // Log the generation
     await prisma.inboundLog.create({
       data: {
@@ -335,6 +346,151 @@ export const getMovements = async (req, res) => {
     });
 
     res.json(mapped);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Report an exception for an Inbound PO
+ * @route   POST /api/inbound/:id/exceptions
+ */
+export const reportException = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { note, image } = req.body;
+
+    const exception = await prisma.exception.create({
+      data: {
+        inboundId: parseInt(id),
+        userId: req.user.id,
+        note,
+        image
+      }
+    });
+
+    // Update Inbound status to EXCEPTION
+    await prisma.inbound.update({
+      where: { id: parseInt(id) },
+      data: { status: 'EXCEPTION', has_exception: true }
+    });
+
+    // Log the exception
+    await prisma.inboundLog.create({
+      data: {
+        inboundId: parseInt(id),
+        action: 'EXCEPTION REPORTED',
+        details: note,
+        userId: req.user.id
+      }
+    });
+
+    res.status(201).json(exception);
+  } catch (error) {
+    console.error('Report Exception Error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Get exceptions for an Inbound PO
+ * @route   GET /api/inbound/:id/exceptions
+ */
+export const getExceptionsByInbound = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const exceptions = await prisma.exception.findMany({
+      where: { inboundId: parseInt(id) },
+      include: { 
+        user: { select: { name: true } },
+        resolvedBy: { select: { name: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(exceptions);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Get all exceptions across all inbounds
+ * @route   GET /api/inbound/all/exceptions
+ */
+export const getAllExceptions = async (req, res) => {
+  try {
+    const exceptions = await prisma.exception.findMany({
+      include: { 
+        user: { select: { name: true } },
+        inbound: { select: { po_no: true, product_description: true } },
+        outboundLine: {
+          include: {
+            outbound: {
+              include: {
+                inbound: { select: { po_no: true } }
+              }
+            }
+          }
+        },
+        resolvedBy: { select: { name: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(exceptions);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Resolve an exception
+ * @route   PUT /api/inbound/exceptions/:id/resolve
+ */
+export const resolveException = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { note } = req.body;
+
+    const exception = await prisma.exception.update({
+      where: { id: parseInt(id) },
+      data: {
+        isResolved: true,
+        resolvedAt: new Date(),
+        resolvedNote: note,
+        resolvedByUserId: req.user.id
+      }
+    });
+
+    // If this is an inbound exception, manage the parent status and logs
+    if (exception.inboundId) {
+      // Check if there are any other UNRESOLVED exceptions for this inbound
+      const unresolved = await prisma.exception.findMany({
+        where: { 
+          inboundId: exception.inboundId,
+          isResolved: false
+        }
+      });
+
+      if (unresolved.length === 0) {
+        // If all resolved, mark has_exception as false
+        await prisma.inbound.update({
+          where: { id: exception.inboundId },
+          data: { has_exception: false }
+        });
+      }
+
+      // Log the resolution
+      await prisma.inboundLog.create({
+        data: {
+          inboundId: exception.inboundId,
+          action: 'EXCEPTION RESOLVED',
+          details: note,
+          userId: req.user.id
+        }
+      });
+    }
+
+    res.json(exception);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -35,7 +35,7 @@ const upload = multer({
  * @desc    Upload a single image
  * @route   POST /api/upload
  */
-router.post('/', protect, adminOnly, upload.single('image'), (req, res) => {
+router.post('/', protect, upload.single('image'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
   }

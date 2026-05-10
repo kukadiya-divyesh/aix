@@ -1,21 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
-import { Camera } from 'expo-camera';
-import { BarCodeScanner } from 'expo-barcode-scanner';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Box, CheckCircle, AlertTriangle, Scan } from 'lucide-react-native';
 
 const PlacementScreen = () => {
-  const [hasPermission, setHasPermission] = useState(null);
+  const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [gridCode, setGridCode] = useState(null);
   const [rfidTags, setRfidTags] = useState([]);
   const [mode, setMode] = useState('grid'); // 'grid' or 'rfid'
 
   useEffect(() => {
-    (async () => {
-      const { status } = await BarCodeScanner.requestPermissionsAsync();
-      setHasPermission(status === 'granted');
-    })();
+    if (!permission || !permission.granted) {
+      requestPermission();
+    }
   }, []);
 
   const handleBarCodeScanned = ({ type, data }) => {
@@ -40,8 +38,8 @@ const PlacementScreen = () => {
     setMode('grid');
   };
 
-  if (hasPermission === null) return <Text>Requesting camera permission...</Text>;
-  if (hasPermission === false) return <Text>No access to camera</Text>;
+  if (!permission) return <View style={styles.container}><Text style={styles.tagText}>Requesting camera permission...</Text></View>;
+  if (!permission.granted) return <View style={styles.container}><Text style={styles.tagText}>No access to camera</Text></View>;
 
   return (
     <View style={styles.container}>
@@ -53,12 +51,18 @@ const PlacementScreen = () => {
       </View>
 
       <View style={styles.scannerContainer}>
-        <BarCodeScanner
-          onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
+        <CameraView
+          barcodeScannerSettings={{
+            barcodeTypes: ["qr", "code128", "code39", "ean13", "ean8"],
+          }}
+          onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
           style={StyleSheet.absoluteFillObject}
+          facing="back"
         />
         {scanned && <View style={styles.overlay}><CheckCircle color="white" size={60} /></View>}
       </View>
+
+
 
       <View style={styles.listContainer}>
         <Text style={styles.listTitle}>Scanned RFIDs ({rfidTags.length})</Text>
@@ -82,6 +86,7 @@ const PlacementScreen = () => {
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },

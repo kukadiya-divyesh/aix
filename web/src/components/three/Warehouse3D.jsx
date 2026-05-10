@@ -59,24 +59,15 @@ const GridCell = ({ position, code, product, onHover }) => {
 const Warehouse3D = ({ data }) => {
   const [hoveredInfo, setHoveredInfo] = useState({ code: null, product: null });
 
-  // Generate 50 grids (5x10)
-  const grids = [];
-  for (let i = 0; i < 50; i++) {
-    const row = Math.floor(i / 10);
-    const col = i % 10;
-    const code = (i + 1).toString().padStart(4, '0');
-    // Mock product data for viz
-    const product = i % 7 === 0 ? "Inventory Item" : null;
-    grids.push(
-      <GridCell 
-        key={code} 
-        position={[col * 1.2 - 5.4, 0, row * 1.2 - 2.4]} 
-        code={code}
-        product={product}
-        onHover={(code, product) => setHoveredInfo({ code, product })}
-      />
-    );
-  }
+  const grids = (data || []).map((grid) => (
+    <GridCell 
+      key={grid.code} 
+      position={[grid.x, grid.y, grid.z]} 
+      code={grid.code}
+      product={grid.product}
+      onHover={(code, product) => setHoveredInfo({ code, product })}
+    />
+  ));
 
   return (
     <div style={{ width: '100%', height: '600px', position: 'relative', borderRadius: '12px', overflow: 'hidden', background: '#0f172a' }}>

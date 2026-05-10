@@ -72,9 +72,9 @@ const WarehouseMaster = () => {
       </header>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+      <div className="table-responsive" style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid var(--border)', paddingBottom: '1rem', overflowX: 'auto' }}>
         <TabButton active={activeTab === 'warehouses'} onClick={() => setActiveTab('warehouses')} icon={<Warehouse size={18}/>} label="Warehouses" />
-        <TabButton active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} icon={<Layers size={18}/>} label="Sheds / Locations" />
+        <TabButton active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} icon={<Layers size={18}/>} label="Sheds" />
         <TabButton active={activeTab === 'grids'} onClick={() => setActiveTab('grids')} icon={<GridIcon size={18}/>} label="Grids" />
       </div>
 
@@ -171,7 +171,7 @@ const WarehouseTab = ({ warehouses, isAdmin, onRefresh, onDelete }) => {
       {showForm && (
         <div className="glass" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
           <h3>{editingId ? 'Edit Warehouse' : 'New Warehouse'}</h3>
-          <form style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr) auto', gap: '1rem', marginTop: '1rem' }} onSubmit={submit}>
+          <form className="grid-responsive" style={{ marginTop: '1rem', gap: '1rem' }} onSubmit={submit}>
             <input className="glass" placeholder="Warehouse City" style={inputStyle} value={data.city} onChange={e => setData({...data, city: e.target.value})} required />
             <input className="glass" placeholder="Warehouse Name" style={inputStyle} value={data.name} onChange={e => setData({...data, name: e.target.value})} required />
             <div style={{ position: 'relative' }}>
@@ -274,8 +274,8 @@ const LocationTab = ({ sheds, warehouses, isAdmin, onRefresh, onDelete }) => {
           </form>
         </div>
       )}
-      <div className="glass" style={{ padding: '0', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+      <div className="table-responsive glass" style={{ padding: '0', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
           <thead style={{ background: 'rgba(0,0,0,0.02)', color: 'var(--text-muted)', fontSize: '13px' }}>
             <tr>
               <th style={thStyle}>LOCATION NAME</th>
@@ -402,8 +402,8 @@ const GridTab = ({ grids, warehouses, isAdmin, onRefresh, onDelete }) => {
           </form>
         </div>
       )}
-      <div className="glass" style={{ padding: '0', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+      <div className="table-responsive glass" style={{ padding: '0', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
           <thead style={{ background: 'rgba(0,0,0,0.05)', color: '#94a3b8', fontSize: '13px' }}>
             <tr>
               <th style={thStyle}>GRID CODE</th>

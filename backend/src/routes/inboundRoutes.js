@@ -5,18 +5,26 @@ import {
   getInboundById, 
   updateInbound,
   generateTags,
-  getMovements
+  getMovements,
+  reportException,
+  getExceptionsByInbound,
+  getAllExceptions,
+  resolveException
 } from '../controllers/inboundController.js';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect, requireWriteAccess } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 router.use(protect);
-router.post('/', createInbound);
+router.post('/', requireWriteAccess, createInbound);
 router.get('/', getInbounds);
+router.get('/all/exceptions', getAllExceptions);
 router.get('/:id', getInboundById);
-router.put('/:id', updateInbound);
-router.post('/:id/generate-tags', generateTags);
+router.put('/:id', requireWriteAccess, updateInbound);
+router.post('/:id/generate-tags', requireWriteAccess, generateTags);
 router.get('/:id/movements', getMovements);
+router.post('/:id/exceptions', reportException);
+router.get('/:id/exceptions', getExceptionsByInbound);
+router.put('/exceptions/:id/resolve', requireWriteAccess, resolveException);
 
 export default router;
