@@ -39,15 +39,27 @@ export const createInbound = async (req, res) => {
         qty_per_box: qty_per_box,
         assignedUserId: data.assignedUserId ? parseInt(data.assignedUserId) : null,
         status: 'DRAFT',
+        type: data.type || 'PURCHASE',
         logs: {
           create: {
             action: 'Record Created',
-            details: `Initial creation by ${req.user.name}`,
+            details: `Initial creation by ${req.user.name}${data.type === 'RETURN' ? ' (Sales Return)' : ''}`,
             userId: req.user.id
           }
         }
       }
     });
+
+    // If it's a return, notify the assigned salesperson
+    if (data.type === 'RETURN' && inbound.assignedUserId) {
+      await prisma.notification.create({
+        data: {
+          userId: inbound.assignedUserId,
+          message: `A product return picking (${inbound.po_no}) has been created and assigned to you.`,
+          type: 'warning'
+        }
+      });
+    }
 
     // Generate Serial Numbers (RFID Tags) for each box
     const serialNumbers = [];
@@ -211,6 +223,7 @@ export const updateInbound = async (req, res) => {
       bond_expiry_date: rawData.bond_expiry_date ? new Date(rawData.bond_expiry_date) : null,
       assignedUserId: rawData.assignedUserId ? parseInt(rawData.assignedUserId) : null,
       status: rawData.status || undefined,
+      type: rawData.type || undefined,
       has_exception: rawData.has_exception !== undefined ? rawData.has_exception : undefined,
     };
 

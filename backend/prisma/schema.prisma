@@ -85,6 +85,7 @@ model Inbound {
   pkg_details         String?
   qty_per_box         Float
   status              InboundStatus  @default(DRAFT)
+  type                InboundType    @default(PURCHASE)
   has_exception       Boolean        @default(false)
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
@@ -161,6 +162,14 @@ model OutboundLine {
   status         String   @default("pending")
   scannedRfids   String[]
   outboundId     Int
+  
+  // Indian E-Invoicing Fields
+  irn            String?
+  ackNo          String?
+  ackDate        DateTime?
+  einvoiceStatus EInvoiceStatus @default(PENDING)
+  qrCode         String?  @db.Text
+  
   createdAt      DateTime       @default(now())
   outbound       Outbound       @relation(fields: [outboundId], references: [id])
   postedBy       User           @relation(fields: [postedByUserId], references: [id])
@@ -187,6 +196,16 @@ model Exception {
   resolvedBy   User?         @relation("ResolvedBy", fields: [resolvedByUserId], references: [id])
 }
 
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  message   String
+  type      String   @default("info") // info, warning, success, error
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
 enum Role {
   ADMIN
   GLOBAL
@@ -198,6 +217,18 @@ enum InboundStatus {
   IN_PROCESS
   DONE
   EXCEPTION
+}
+
+enum InboundType {
+  PURCHASE
+  RETURN
+}
+
+enum EInvoiceStatus {
+  PENDING
+  GENERATED
+  CANCELLED
+  FAILED
 }
 
 enum SNStatus {

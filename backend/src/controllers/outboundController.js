@@ -340,3 +340,53 @@ export const getOutboundLines = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+/**
+ * @desc    Generate Indian E-Invoice (Simulation for Manual Control)
+ * @route   POST /api/outbound/einvoice/generate/:lineId
+ */
+export const generateEInvoice = async (req, res) => {
+  try {
+    const { lineId } = req.params;
+    
+    // Simulate API call to IRP
+    const irn = 'IRN' + Math.random().toString(36).substring(2, 15).toUpperCase() + Math.random().toString(36).substring(2, 15).toUpperCase();
+    const ackNo = 'ACK' + Math.floor(1000000000 + Math.random() * 9000000000);
+    
+    const updated = await prisma.outboundLine.update({
+      where: { id: parseInt(lineId) },
+      data: {
+        irn,
+        ackNo,
+        ackDate: new Date(),
+        einvoiceStatus: 'GENERATED',
+        qrCode: 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + irn
+      }
+    });
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Cancel Indian E-Invoice
+ * @route   POST /api/outbound/einvoice/cancel/:lineId
+ */
+export const cancelEInvoice = async (req, res) => {
+  try {
+    const { lineId } = req.params;
+    
+    const updated = await prisma.outboundLine.update({
+      where: { id: parseInt(lineId) },
+      data: {
+        einvoiceStatus: 'CANCELLED'
+      }
+    });
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

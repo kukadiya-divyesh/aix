@@ -111,6 +111,50 @@ const InboundModule = ({ user }) => {
     }
   };
 
+  const [masterBalance, setMasterBalance] = useState(0);
+
+  const openIssueStock = () => {
+    // Calculate balance
+    const issued = ledger.reduce((sum, l) => sum + l.quantityIssued, 0);
+    setMasterBalance(formData.quantity - issued);
+    setIssueData({
+      flightNo: '',
+      sbNo: '',
+      quantityIssued: '',
+      noOfBoxes: '',
+      date: new Date().toISOString().split('T')[0]
+    });
+    setShowIssueStock(true);
+  };
+
+  const handlePostLedger = async () => {
+    if (!issueData.quantityIssued || issueData.quantityIssued <= 0) {
+      showNotification('Please enter a valid quantity to issue.', 'error');
+      return;
+    }
+    if (issueData.quantityIssued > masterBalance) {
+      showNotification('Cannot issue more than available balance.', 'error');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await axios.post(`/api/outbound/ledger/${editingId}`, {
+        ...issueData,
+        quantityIssued: parseInt(issueData.quantityIssued),
+        noOfBoxes: parseInt(issueData.noOfBoxes || 1)
+      });
+      showNotification('Stock posted to network ledger successfully', 'success');
+      setShowIssueStock(false);
+      fetchLedger(editingId);
+      fetchInbounds();
+    } catch (err) {
+      showNotification(err.response?.data?.message || err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchMovements = async () => {
     setLoading(true);
     try {
@@ -210,259 +254,351 @@ const InboundModule = ({ user }) => {
 
   return (
     <div style={{ padding: '2rem', backgroundColor: '#f8fafc', minHeight: '100vh' }} className="animate-fade-in">
-      {view === 'tree' ? (
-        <>
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-            <div>
-              <h1 style={{ fontSize: '2.5rem', fontWeight: 900, color: '#1e293b', letterSpacing: '-1.5px' }}>Inbound Management</h1>
-              <p style={{ color: '#64748b', marginTop: '0.2rem', fontSize: '1.1rem' }}>Process SAP records and generate RFID tracking tags.</p>
+      <>
+        {view === 'tree' ? (
+          <>
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+              <div>
+                <h1 style={{ fontSize: '2.5rem', fontWeight: 900, color: '#1e293b', letterSpacing: '-1.5px' }}>Inbound Management</h1>
+                <p style={{ color: '#64748b', marginTop: '0.2rem', fontSize: '1.1rem' }}>Process SAP records and generate RFID tracking tags.</p>
+              </div>
+              {user?.role !== 'GLOBAL' && (
+                <button className="btn btn-primary" onClick={openNew} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.8rem 1.5rem', borderRadius: '8px', fontWeight: 700 }}>
+                  <Plus size={20} /> New Inbound
+                </button>
+              )}
+            </header>
+
+            <form style={{
+              marginBottom: '2.5rem',
+              padding: '0.5rem 1.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1rem',
+              borderRadius: '12px',
+              backgroundColor: 'white',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+            }} onSubmit={handleSearch}>
+              <Search size={22} color="#94a3b8" />
+              <input
+                placeholder="Search by PO No, AWB No, or Description..."
+                style={{ width: '100%', padding: '1rem', border: 'none', background: 'transparent', color: '#1e293b', fontSize: '1.1rem', outline: 'none' }}
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+              <button type="submit" className="btn btn-primary" style={{ padding: '0.8rem 2.5rem', borderRadius: '8px', fontWeight: 700 }}>Search</button>
+            </form>
+
+            <div style={{ backgroundColor: 'white', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.05)' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '1100px' }}>
+                  <thead style={{ background: '#f1f5f9', color: '#475569', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    <tr>
+                      <th style={thStyle}>PO Number</th>
+                      <th style={thStyle}>AWB No</th>
+                      <th style={thStyle}>Description</th>
+                      <th style={thStyle}>Location</th>
+                      <th style={thStyle}>Boxes</th>
+                      <th style={thStyle}>Qty</th>
+                      <th style={thStyle}>Create Date</th>
+                      <th style={thStyle}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inbounds.map(ib => (
+                      <tr
+                        key={ib.id}
+                        style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.2s', cursor: 'pointer' }}
+                        className="table-row"
+                        onClick={() => handleEdit(ib)}
+                      >
+                        <td style={tdStyle}>
+                          <div style={{ fontWeight: 800, color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '15px' }}>
+                            <Hash size={14} /> {ib.po_no}
+                          </div>
+                        </td>
+                        <td style={{ ...tdStyle, color: '#1e293b', fontWeight: 700 }}>{ib.awb_no || '-'}</td>
+                        <td style={{ ...tdStyle, color: '#475569', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ib.product_description || 'N/A'}</td>
+                        <td style={tdStyle}><span style={{ color: '#14b8a6', fontWeight: 600 }}>{ib.warehouse_location}</span></td>
+                        <td style={tdStyle}>{ib.no_of_box}</td>
+                        <td style={{ ...tdStyle, fontWeight: 700 }}>{ib.quantity}</td>
+                        <td style={tdStyle}>
+                          <div style={{ color: '#64748b', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <Calendar size={13} /> {new Date(ib.createdAt).toLocaleString()}
+                          </div>
+                        </td>
+                        <td style={tdStyle}>
+                          <StatusBadge status={ib.status} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {pagination.totalPages > 1 && (
+                <div style={{ padding: '1.5rem', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'center', gap: '0.5rem', background: '#f8fafc' }}>
+                  <button className="btn" disabled={pagination.page === 1} onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })} style={{ background: 'white', border: '1px solid #e2e8f0', color: '#475569' }}>Previous</button>
+                  <button className="btn btn-primary" disabled={pagination.page === pagination.totalPages} onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}>Next</button>
+                </div>
+              )}
             </div>
-            {user?.role !== 'GLOBAL' && (
-              <button className="btn btn-primary" onClick={openNew} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.8rem 1.5rem', borderRadius: '8px', fontWeight: 700 }}>
-                <Plus size={20} /> New Inbound
-              </button>
-            )}
+          </>
+        ) : view === 'form' ? (
+          <div className="animate-fade-in" style={{ padding: '2rem', backgroundColor: '#fcfcfc', minHeight: '100vh' }}>
+          <header style={{ marginBottom: '2.5rem' }}>
+            <button 
+              onClick={() => setView('tree')} 
+              style={{ marginBottom: '1.5rem', background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold', fontSize: '13px' }}
+            >
+              <ArrowRight size={16} style={{ transform: 'rotate(180deg)' }} /> Back to List
+            </button>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                <h1 style={{ fontSize: '3.5rem', fontWeight: 900, color: '#1e293b', margin: 0, letterSpacing: '-2px' }}>
+                  {formData.po_no || '13007880'}
+                </h1>
+                <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.4rem 1rem', borderRadius: '20px', border: '1px solid #16a34a', fontWeight: 800, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{ width: '8px', height: '8px', backgroundColor: '#16a34a', borderRadius: '50%' }}></span>
+                  RFID TAGS: {tagCount}
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button className="action-btn" onClick={openIssueStock} style={{ backgroundColor: '#ccfbf1', color: '#0d9488', border: 'none' }}><Plus size={16}/> Issue Stock</button>
+                <button className="action-btn" onClick={fetchMovements} style={{ backgroundColor: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}><Search size={16}/> Movement</button>
+                <button className="action-btn disabled" disabled style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none' }}><Tag size={16}/> RFID Generated</button>
+                <button className="action-btn disabled" disabled style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none' }}><Printer size={16}/> Print RFID</button>
+                <button className="action-btn" onClick={handleSubmit} style={{ backgroundColor: '#d32f2f', color: 'white', border: 'none', padding: '0.75rem 2.5rem' }}>Save Record</button>
+                <button className="action-btn" onClick={() => setView('tree')} style={{ backgroundColor: 'white', color: '#64748b', border: '1px solid #e2e8f0' }}>Discard</button>
+              </div>
+            </div>
+            <p style={{ color: '#94a3b8', marginTop: '0.5rem', fontSize: '14px' }}>Modify logistics details and review audit logs.</p>
           </header>
 
-          <form style={{
-            marginBottom: '2.5rem',
-            padding: '0.5rem 1.5rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '1rem',
-            borderRadius: '12px',
-            backgroundColor: 'white',
-            border: '1px solid #e2e8f0',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
-          }} onSubmit={handleSearch}>
-            <Search size={22} color="#94a3b8" />
-            <input
-              placeholder="Search by PO No, AWB No, or Description..."
-              style={{ width: '100%', padding: '1rem', border: 'none', background: 'transparent', color: '#1e293b', fontSize: '1.1rem', outline: 'none' }}
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-            />
-            <button type="submit" className="btn btn-primary" style={{ padding: '0.8rem 2.5rem', borderRadius: '8px', fontWeight: 700 }}>Search</button>
-          </form>
+          <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '3rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #f1f5f9' }}>
+            
+            <SectionTitle>Reference & Identification</SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '2rem', marginBottom: '3rem' }}>
+               <FormInput label="PO Number" name="po_no" val={formData} set={setFormData} />
+               <FormInput label="Invoice Number" name="inv_no" val={formData} set={setFormData} />
+               <FormInput label="AWB Number" name="awb_no" val={formData} set={setFormData} />
+               <FormInput label="BE Number" name="be_no" val={formData} set={setFormData} />
+               <FormInput label="IGM Number" name="igm_no" val={formData} set={setFormData} />
+               <FormInput label="CTH Number" name="cth_no" val={formData} set={setFormData} />
+               <FormInput label="Stock Number" name="stock_no" val={formData} set={setFormData} />
+               <FormInput label="Country of Origin" name="country_of_origin" val={formData} set={setFormData} />
+            </div>
 
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.05)' }}>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '1100px' }}>
-                <thead style={{ background: '#f1f5f9', color: '#475569', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            <SectionTitle>Cargo & Product Content</SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '2rem', marginBottom: '3rem' }}>
+               <div style={{ gridColumn: 'span 1' }}>
+                  <FormInput label="Product Description" name="product_description" val={formData} set={setFormData} />
+               </div>
+               <FormInput label="Total Quantity" name="quantity" type="number" val={formData} set={setFormData} />
+               <FormInput label="No of Boxes" name="no_of_box" type="number" val={formData} set={setFormData} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: '2rem', marginBottom: '3rem' }}>
+               <FormInput label="Total Weight (KG)" name="weight" type="number" val={formData} set={setFormData} />
+               <FormInput label="Per Box Weight" name="per_box_weight_kg" type="number" val={formData} set={setFormData} />
+               <FormInput label="Packaging Details" name="pkg_details" val={formData} set={setFormData} />
+            </div>
+
+            <SectionTitle>Logistics & Financials</SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '2rem' }}>
+               <FormInput label="Warehouse Location" name="warehouse_location" val={formData} set={setFormData} />
+               <FormInput label="Bond Date" name="bond_date" type="date" val={formData} set={setFormData} />
+               <FormInput label="Bond Expiry" name="bond_expiry_date" type="date" val={formData} set={setFormData} />
+               <div>
+                  <label style={labelStyle}>Assigned To</label>
+                  <select style={inputStyle} value={formData.assignedUserId} onChange={e => setFormData({ ...formData, assignedUserId: e.target.value })}>
+                    <option value="">-- Select Personnel --</option>
+                    {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+               </div>
+            </div>
+
+            {editingId && (
+              <div style={{ marginTop: '4rem', borderTop: '1px solid #f1f5f9', paddingTop: '2rem' }}>
+                 <div style={{ display: 'flex', gap: '2rem', marginBottom: '2rem' }}>
+                    <SubTab label="Ledger" active={activeSubTab === 'ledger'} onClick={() => setActiveSubTab('ledger')} count={ledger.length} />
+                    <SubTab label="Exceptions" active={activeSubTab === 'exceptions'} onClick={() => setActiveSubTab('exceptions')} count={exceptions.length} />
+                    <SubTab label="Audit Logs" active={activeSubTab === 'logs'} onClick={() => setActiveSubTab('logs')} count={logs.length} />
+                 </div>
+                 
+                 <div style={{ minHeight: '200px' }}>
+                    {activeSubTab === 'ledger' && (
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                         <thead style={{ background: '#f8fafc', color: '#64748b', fontSize: '11px', textTransform: 'uppercase' }}>
+                            <tr>
+                               <th style={thStyle}>Date</th>
+                               <th style={thStyle}>Flight/Vehicle</th>
+                               <th style={thStyle}>SB No</th>
+                               <th style={thStyle}>Qty Issued</th>
+                               <th style={thStyle}>Balance</th>
+                               <th style={thStyle}>Status</th>
+                            </tr>
+                         </thead>
+                         <tbody>
+                            {ledger.map(line => (
+                              <tr key={line.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                 <td style={tdStyle}>{new Date(line.date).toLocaleDateString()}</td>
+                                 <td style={tdStyle}>{line.flightNo}</td>
+                                 <td style={tdStyle}>{line.sbNo}</td>
+                                 <td style={tdStyle}>{line.quantityIssued}</td>
+                                 <td style={tdStyle}>{line.balance}</td>
+                                 <td style={tdStyle}><StatusBadge status={line.status} /></td>
+                              </tr>
+                            ))}
+                         </tbody>
+                      </table>
+                    )}
+                    {activeSubTab === 'logs' && (
+                      <div className="animate-fade-in">
+                        {logs.map((log, i) => (
+                          <div key={i} style={{ padding: '1rem 0', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
+                            <div>
+                              <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '14px' }}>{log.action}</div>
+                              <div style={{ color: '#64748b', fontSize: '12px', marginTop: '0.2rem' }}>{log.details}</div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ color: '#1e293b', fontWeight: 600, fontSize: '12px' }}>{log.user?.name}</div>
+                              <div style={{ color: '#94a3b8', fontSize: '10px' }}>{new Date(log.createdAt).toLocaleString()}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                 </div>
+              </div>
+            )}
+          </div>
+
+          <style>{`
+            .action-btn {
+              padding: 0.6rem 1.2rem;
+              borderRadius: 6px;
+              fontWeight: 700;
+              fontSize: '13px';
+              display: 'flex';
+              alignItems: 'center';
+              gap: '0.5rem';
+              cursor: pointer;
+              transition: opacity 0.2s;
+            }
+            .action-btn:hover { opacity: 0.8; }
+            .action-btn.disabled { cursor: not-allowed; opacity: 0.6; }
+            .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+          `}</style>
+        </div>
+        ) : (
+          <div className="animate-fade-in">
+            <header style={{ marginBottom: '2rem' }}>
+              <button
+                onClick={() => setView('form')}
+                style={{ marginBottom: '1rem', background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}
+              >
+                <ArrowRight size={18} style={{ transform: 'rotate(180deg)' }} /> Back to PO Record
+              </button>
+              <h1 style={{ fontSize: '2.5rem', fontWeight: 900, color: '#1e293b', letterSpacing: '-1.5px' }}>RFID Tracking</h1>
+            </header>
+
+            <div style={{ backgroundColor: 'white', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead style={{ background: '#f1f5f9', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>
                   <tr>
-                    <th style={thStyle}>PO Number</th>
-                    <th style={thStyle}>AWB No</th>
-                    <th style={thStyle}>Description</th>
-                    <th style={thStyle}>Location</th>
-                    <th style={thStyle}>Boxes</th>
-                    <th style={thStyle}>Qty</th>
-                    <th style={thStyle}>Create Date</th>
+                    <th style={thStyle}>RFID Serial</th>
                     <th style={thStyle}>Status</th>
+                    <th style={thStyle}>Grid</th>
+                    <th style={thStyle}>Gate Scan</th>
+                    <th style={thStyle}>Out Scan</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {inbounds.map(ib => (
-                    <tr
-                      key={ib.id}
-                      style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.2s', cursor: 'pointer' }}
-                      className="table-row"
-                      onClick={() => handleEdit(ib)}
-                    >
-                      <td style={tdStyle}>
-                        <div style={{ fontWeight: 800, color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '15px' }}>
-                          <Hash size={14} /> {ib.po_no}
-                        </div>
-                      </td>
-                      <td style={{ ...tdStyle, color: '#1e293b', fontWeight: 700 }}>{ib.awb_no || '-'}</td>
-                      <td style={{ ...tdStyle, color: '#475569', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ib.product_description || 'N/A'}</td>
-                      <td style={tdStyle}><span style={{ color: '#14b8a6', fontWeight: 600 }}>{ib.warehouse_location}</span></td>
-                      <td style={tdStyle}>{ib.no_of_box}</td>
-                      <td style={{ ...tdStyle, fontWeight: 700 }}>{ib.quantity}</td>
-                      <td style={tdStyle}>
-                        <div style={{ color: '#64748b', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <Calendar size={13} /> {new Date(ib.createdAt).toLocaleString()}
-                        </div>
-                      </td>
-                      <td style={tdStyle}>
-                        <StatusBadge status={ib.status} />
-                      </td>
+                  {movements.map((mv, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: '#3b82f6' }}>{mv.code}</td>
+                      <td style={tdStyle}><StatusBadge status={mv.status} /></td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{mv.grid || '-'}</td>
+                      <td style={tdStyle}>{mv.gateScan ? new Date(mv.gateScan).toLocaleString() : '-'}</td>
+                      <td style={tdStyle}>{mv.outgateScan ? new Date(mv.outgateScan).toLocaleString() : '-'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-
-            {pagination.totalPages > 1 && (
-              <div style={{ padding: '1.5rem', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'center', gap: '0.5rem', background: '#f8fafc' }}>
-                <button className="btn" disabled={pagination.page === 1} onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })} style={{ background: 'white', border: '1px solid #e2e8f0', color: '#475569' }}>Previous</button>
-                <button className="btn btn-primary" disabled={pagination.page === pagination.totalPages} onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}>Next</button>
-              </div>
-            )}
           </div>
-        </>
-      ) : view === 'form' ? (
-        <div className="animate-fade-in">
-          <header style={{ marginBottom: '2rem' }}>
-            <button
-              onClick={() => setView('tree')}
-              style={{ marginBottom: '1rem', background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}
-            >
-              <ArrowRight size={18} style={{ transform: 'rotate(180deg)' }} /> Back to Inbound List
-            </button>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <h1 style={{ fontSize: '2.5rem', fontWeight: 900, color: '#1e293b', letterSpacing: '-1.5px' }}>
-                  {editingId ? `PO ${formData.po_no}` : 'New Inbound'}
-                </h1>
-                <p style={{ color: '#64748b', fontSize: '1.1rem' }}>{editingId ? 'Modify logistics details and review audit logs.' : 'Initialize a new SAP payload.'}</p>
-              </div>
-              <div style={{ display: 'flex', gap: '0.8rem' }}>
-                {editingId && (
-                  <button onClick={fetchMovements} className="btn" style={{ background: 'white', border: '1px solid #e2e8f0', color: '#3b82f6', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <Clock size={18} /> View Movements
+        )}
+
+        <style>{`
+          .table-row:hover { background-color: #f8fafc !important; }
+          .animate-fade-in { animation: fadeIn 0.4s ease-out; }
+          @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        `}</style>
+        
+        {/* Issue Stock Popup */}
+        {showIssueStock && (
+          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+            <div className="animate-scale-in" style={{ backgroundColor: '#f1f5f9', width: '90%', maxWidth: '800px', borderRadius: '24px', padding: '3rem', position: 'relative', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
+                  <h2 style={{ fontSize: '2.5rem', fontWeight: 900, color: '#1e293b', margin: 0 }}>Issue Stock from PO</h2>
+                  <div style={{ textAlign: 'right' }}>
+                     <div style={{ fontSize: '12px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Master Balance</div>
+                     <div style={{ fontSize: '3rem', fontWeight: 900, color: '#14b8a6' }}>{masterBalance}</div>
+                  </div>
+               </div>
+
+               <div style={{ background: 'rgba(255,255,255,0.5)', padding: '1.5rem', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', marginBottom: '2.5rem', border: '1px solid white' }}>
+                  <div>
+                     <div style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Posted By</div>
+                     <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>{user?.name}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                     <div style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Audit ID</div>
+                     <div style={{ fontSize: '18px', fontWeight: 800, color: '#3b82f6' }}>AIX-FS-{Math.floor(100000 + Math.random() * 900000)}</div>
+                  </div>
+               </div>
+
+               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '3rem' }}>
+                  <div>
+                     <label style={popupLabelStyle}>Flight Number / Vehicle</label>
+                     <input style={popupInputStyle} value={issueData.flightNo} onChange={e => setIssueData({...issueData, flightNo: e.target.value})} />
+                  </div>
+                  <div>
+                     <label style={popupLabelStyle}>Shipping Bill / Invoice No</label>
+                     <input style={popupInputStyle} value={issueData.sbNo} onChange={e => setIssueData({...issueData, sbNo: e.target.value})} />
+                  </div>
+                  <div>
+                     <label style={popupLabelStyle}>Quantity (To Issue)</label>
+                     <input type="number" style={popupInputStyle} value={issueData.quantityIssued} onChange={e => setIssueData({...issueData, quantityIssued: e.target.value})} />
+                  </div>
+                  <div>
+                     <label style={popupLabelStyle}>Issuance Date</label>
+                     <input type="date" style={popupInputStyle} value={issueData.date} onChange={e => setIssueData({...issueData, date: e.target.value})} />
+                  </div>
+               </div>
+
+               <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button 
+                    onClick={handlePostLedger}
+                    style={{ flex: 1, padding: '1.2rem', backgroundColor: '#d32f2f', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 800, fontSize: '16px', cursor: 'pointer' }}
+                  >
+                    Post to Network Ledger
                   </button>
-                )}
-                {user?.role !== 'GLOBAL' && (
-                  <button onClick={handleSubmit} className="btn btn-primary" style={{ padding: '0.8rem 2rem', fontWeight: 700 }}>
-                    Save Record
+                  <button 
+                    onClick={() => setShowIssueStock(false)}
+                    style={{ padding: '1.2rem 2.5rem', backgroundColor: '#334155', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 800, fontSize: '16px', cursor: 'pointer' }}
+                  >
+                    Cancel
                   </button>
-                )}
-              </div>
-            </div>
-          </header>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
-            <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '2.5rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
-              <h3 style={sectionHeaderStyle}>Cargo Information</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginTop: '1.5rem' }}>
-                <FormInput label="PO Number" name="po_no" val={formData} set={setFormData} required />
-                <FormInput label="Invoice Number" name="inv_no" val={formData} set={setFormData} />
-                <FormInput label="AWB Number" name="awb_no" val={formData} set={setFormData} />
-                <FormInput label="BE Number" name="be_no" val={formData} set={setFormData} />
-
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={labelStyle}>Product Description</label>
-                  <input style={inputStyle} value={formData.product_description} onChange={e => setFormData({ ...formData, product_description: e.target.value })} />
-                </div>
-
-                <FormInput label="Total Quantity" name="quantity" type="number" val={formData} set={setFormData} required />
-                <FormInput label="No of Boxes" name="no_of_box" type="number" val={formData} set={setFormData} required />
-                <FormInput label="Stock Number" name="stock_no" val={formData} set={setFormData} />
-                <FormInput label="Location" name="warehouse_location" val={formData} set={setFormData} />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-              <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '2rem', border: '1px solid #e2e8f0' }}>
-                <h3 style={sectionHeaderStyle}>Personnel</h3>
-                <div style={{ marginTop: '1.5rem' }}>
-                  <label style={labelStyle}>Assigned To</label>
-                  <select style={inputStyle} value={formData.assignedUserId} onChange={e => setFormData({ ...formData, assignedUserId: e.target.value })}>
-                    <option value="">-- Unassigned --</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              {editingId && (
-                <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '2rem', border: '1px solid #e2e8f0' }}>
-                  <h3 style={sectionHeaderStyle}>Tracking Tags</h3>
-                  <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
-                    <div style={{ fontSize: '3rem', fontWeight: 900, color: '#3b82f6' }}>{tagCount}</div>
-                    <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', marginBottom: '1.5rem' }}>Active RFID Tags</div>
-                    {tagCount === 0 && user?.role !== 'GLOBAL' && (
-                      <button onClick={handleGenerateTags} className="btn btn-primary" style={{ width: '100%' }}>
-                        Generate RFID Tags
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
+               </div>
             </div>
           </div>
-
-          {editingId && (
-            <div style={{ marginTop: '3rem', backgroundColor: 'white', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-              <div style={{ display: 'flex', gap: '2rem', padding: '0 2rem', background: '#f1f5f9' }}>
-                <SubTab label="Exceptions" active={activeSubTab === 'exceptions'} onClick={() => setActiveSubTab('exceptions')} count={exceptions.length} />
-                <SubTab label="Logs" active={activeSubTab === 'logs'} onClick={() => setActiveSubTab('logs')} count={logs.length} />
-              </div>
-              <div style={{ padding: '2rem' }}>
-                {activeSubTab === 'exceptions' && (
-                  <div className="animate-fade-in">
-                    {exceptions.map(ex => (
-                      <div key={ex.id} style={{ display: 'flex', gap: '1.5rem', padding: '1rem', borderBottom: '1px solid #f1f5f9' }}>
-                        {ex.image && <img src={`http://192.168.29.57:5001${ex.image}`} style={{ width: '80px', height: '60px', borderRadius: '4px', objectFit: 'cover' }} />}
-                        <div>
-                          <div style={{ color: '#ef4444', fontWeight: 700 }}>{ex.note}</div>
-                          <div style={{ color: '#64748b', fontSize: '12px' }}>By {ex.user?.name} on {new Date(ex.createdAt).toLocaleString()}</div>
-                        </div>
-                      </div>
-                    ))}
-                    {exceptions.length === 0 && <div style={{ textAlign: 'center', color: '#94a3b8' }}>No exceptions reported.</div>}
-                  </div>
-                )}
-                {activeSubTab === 'logs' && (
-                  <div className="animate-fade-in">
-                    {logs.map((log, i) => (
-                      <div key={i} style={{ padding: '0.8rem 0', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
-                        <div>
-                          <div style={{ fontWeight: 700, color: '#1e293b' }}>{log.action}</div>
-                          <div style={{ color: '#64748b', fontSize: '12px' }}>{log.details}</div>
-                        </div>
-                        <div style={{ textAlign: 'right', fontSize: '12px', color: '#94a3b8' }}>{new Date(log.createdAt).toLocaleString()}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="animate-fade-in">
-          <header style={{ marginBottom: '2rem' }}>
-            <button
-              onClick={() => setView('form')}
-              style={{ marginBottom: '1rem', background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}
-            >
-              <ArrowRight size={18} style={{ transform: 'rotate(180deg)' }} /> Back to PO Record
-            </button>
-            <h1 style={{ fontSize: '2.5rem', fontWeight: 900, color: '#1e293b', letterSpacing: '-1.5px' }}>RFID Tracking</h1>
-          </header>
-
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ background: '#f1f5f9', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>
-                <tr>
-                  <th style={thStyle}>RFID Serial</th>
-                  <th style={thStyle}>Status</th>
-                  <th style={thStyle}>Grid</th>
-                  <th style={thStyle}>Gate Scan</th>
-                  <th style={thStyle}>Out Scan</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movements.map((mv, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ ...tdStyle, fontWeight: 700, color: '#3b82f6' }}>{mv.code}</td>
-                    <td style={tdStyle}><StatusBadge status={mv.status} /></td>
-                    <td style={{ ...tdStyle, fontWeight: 600 }}>{mv.grid || '-'}</td>
-                    <td style={tdStyle}>{mv.gateScan ? new Date(mv.gateScan).toLocaleString() : '-'}</td>
-                    <td style={tdStyle}>{mv.outgateScan ? new Date(mv.outgateScan).toLocaleString() : '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        .table-row:hover { background-color: #f8fafc !important; }
-        .animate-fade-in { animation: fadeIn 0.4s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-      `}</style>
+        )}
+      </>
     </div>
   );
 };
@@ -486,6 +622,23 @@ const sectionHeaderStyle = { fontSize: '1.1rem', fontWeight: 900, color: '#1e293
 const inputStyle = { width: '100%', padding: '0.8rem', color: '#1e293b', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', outline: 'none', backgroundColor: '#fcfcfc' };
 const thStyle = { padding: '1.2rem 1.5rem', fontWeight: 800 };
 const tdStyle = { padding: '1.2rem 1.5rem', fontSize: '14px', verticalAlign: 'middle' };
+
+const popupLabelStyle = { display: 'block', marginBottom: '0.6rem', fontSize: '12px', color: '#475569', fontWeight: 800, textTransform: 'uppercase' };
+const popupInputStyle = { width: '100%', padding: '1.2rem', color: '#1e293b', border: '1px solid white', backgroundColor: 'white', borderRadius: '12px', fontSize: '16px', outline: 'none', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' };
+
+const SectionTitle = ({ children }) => (
+  <h3 style={{ 
+    fontSize: '14px', 
+    fontWeight: 800, 
+    color: '#d32f2f', 
+    textTransform: 'uppercase', 
+    letterSpacing: '0.5px',
+    marginBottom: '1.5rem',
+    display: 'block'
+  }}>
+    {children}
+  </h3>
+);
 
 const SubTab = ({ label, active, onClick, count }) => (
   <button

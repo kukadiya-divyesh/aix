@@ -1,245 +1,275 @@
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import prisma from '../config/prisma.js';
+
+const paginate = (page, limit) => {
+  const p = parseInt(page) || 1;
+  const l = parseInt(limit) || 50;
+  return { skip: (p - 1) * l, take: l, page: p, limit: l };
+};
 
 /**
- * @desc    Get Inventory Movement Tracking Report
- * @route   GET /api/reports/movement
+ * @route GET /api/reports/movement
+ * Full RFID movement tracking — one row per serial number with full audit trail
  */
 export const getMovementReport = async (req, res) => {
   try {
-    const { page = 1, limit = 50, search = '' } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const take = parseInt(limit);
+    const { page, limit, search } = req.query;
+    const { skip, take, page: p, limit: l } = paginate(page, limit);
 
-    const where = search ? {
-      OR: [
-        { code: { contains: search, mode: 'insensitive' } },
-        { inbound: { po_no: { contains: search, mode: 'insensitive' } } },
-        { inbound: { stock_no: { contains: search, mode: 'insensitive' } } }
-      ]
-    } : {};
+    const where = search
+      ? {
+          OR: [
+            { code: { contains: search, mode: 'insensitive' } },
+            { inbound: { po_no: { contains: search, mode: 'insensitive' } } },
+            { inbound: { stock_no: { contains: search, mode: 'insensitive' } } },
+            { inbound: { product_description: { contains: search, mode: 'insensitive' } } },
+          ],
+        }
+      : {};
 
-    const [total, serialNumbers] = await Promise.all([
+    const [total, items] = await Promise.all([
       prisma.serialNumber.count({ where }),
       prisma.serialNumber.findMany({
         where,
-        include: {
-          inbound: true,
-          shed: true,
-          grid: true,
-          outboundLine: {
-            include: { outbound: true }
-          },
-          history: { 
-            include: { user: { select: { name: true } } },
-            orderBy: { timestamp: 'asc' } 
-          }
-        },
         skip,
         take,
-        orderBy: { updatedAt: 'desc' }
-      })
+        orderBy: { createdAt: 'desc' },
+        include: {
+          inbound: {
+            select: {
+              po_no: true,
+              stock_no: true,
+              awb_no: true,
+              product_description: true,
+              quantity: true,
+              no_of_box: true,
+              warehouse_location: true,
+            },
+          },
+          grid: { select: { code: true } },
+          history: {
+            orderBy: { timestamp: 'asc' },
+            include: { user: { select: { name: true } } },
+          },
+          outboundLine: {
+            select: { flightNo: true, date: true, sbNo: true },
+          },
+        },
+      }),
     ]);
 
-    const reportData = serialNumbers.map(sn => {
-      const inGate = sn.history.find(h => h.status === 'IN_GATE');
-      const placed = sn.history.find(h => h.status === 'PLACED');
-      const picked = sn.history.find(h => h.status === 'PICKED');
-      const outGate = sn.history.find(h => h.status === 'OUT_GATE');
+    const data = items.map((sn) => {
+      const auditByStatus = (status) => sn.history.find((h) => h.status === status);
+      const gateLog  = auditByStatus('IN_GATE');
+      const whLog    = auditByStatus('PLACED');
+      const pickLog  = auditByStatus('PICKED');
+      const outLog   = auditByStatus('OUT_GATE');
 
-      let dwellTime = 'N/A';
-      if (inGate && outGate) {
-        const diff = outGate.timestamp - inGate.timestamp;
-        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-        const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-        dwellTime = `${days}d ${hours}h`;
+      const gateTime = gateLog?.timestamp;
+      const outTime  = outLog?.timestamp;
+      let dwellTime  = '—';
+      if (gateTime && outTime) {
+        const diff = Math.round((new Date(outTime) - new Date(gateTime)) / (1000 * 60 * 60));
+        dwellTime = `${diff}h`;
       }
 
       return {
         id: sn.id,
-        // Column 1: S.No (handled by frontend)
-        // Column 2: RFID Serial
         rfidSerial: sn.code,
-        // Column 3: PO Number
-        poNo: sn.inbound?.po_no,
-        // Column 4: Stock Number
-        stockNo: sn.inbound?.stock_no,
-        // Column 5: Flight No.
-        flightNo: sn.outboundLine?.flightNo || 'N/A',
-        // Column 5: Product Description
-        description: sn.inbound?.product_description,
-        // Column 6: Boxes
-        boxes: 1,
-        // Column 7: Total QTY
-        totalQty: sn.inbound?.qty_per_box,
-        // Column 8: W/H Location
-        location: sn.grid?.code || sn.shed?.name || 'N/A',
-        // Column 9: Gate Scan
-        gateScan: inGate ? 'Y' : 'N',
-        // Column 10: Gate Person
-        gatePerson: inGate?.user?.name || 'N/A',
-        // Column 11: Gate Time
-        gateTime: inGate?.timestamp,
-        // Column 12: W/H Scan (Y/N)
-        whScan: placed ? 'Y' : 'N',
-        // Column 13: W/H Person
-        whPerson: placed?.user?.name || 'N/A',
-        // Column 14: W/H Time
-        whTime: placed?.timestamp,
-        // Column 15: Status
+        poNo: sn.inbound?.po_no ?? '—',
+        stockNo: sn.inbound?.stock_no ?? '—',
+        flightNo: sn.outboundLine?.flightNo ?? '—',
+        description: sn.inbound?.product_description ?? '—',
+        boxes: sn.inbound?.no_of_box ?? 0,
+        totalQty: sn.inbound?.quantity ?? 0,
+        location: sn.grid?.code ?? sn.inbound?.warehouse_location ?? '—',
+        gateScan:   gateLog ? 'Y' : 'N',
+        gatePerson: gateLog?.user?.name ?? '—',
+        gateTime,
+        whScan:   whLog ? 'Y' : 'N',
+        whPerson: whLog?.user?.name ?? '—',
+        whTime:   whLog?.timestamp,
         status: sn.status,
-        // Column 16: Pickup Scan
-        pickupScan: picked ? 'Y' : 'N',
-        // Column 17: Pickup Time
-        pickupTime: picked?.timestamp,
-        // Column 18: Out Scan
-        outScan: outGate ? 'Y' : 'N',
-        // Column 19: Out Time
-        outTime: outGate?.timestamp,
-        // Column 20: Out Vehicle
-        outVehicle: sn.outboundLine?.outbound?.vehicleNo || 'N/A',
-        // Column 21: Dwell Time
-        dwellTime
+        pickupScan:  pickLog ? 'Y' : 'N',
+        pickupTime:  pickLog?.timestamp,
+        outScan:  outLog ? 'Y' : 'N',
+        outTime,
+        outVehicle: '—',
+        dwellTime,
       };
     });
 
-    res.json({
-      data: reportData,
-      pagination: {
-        total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.json({ data, pagination: { page: p, limit: l, total, totalPages: Math.ceil(total / l) } });
+  } catch (err) {
+    console.error('MOVEMENT REPORT ERROR:', err);
+    res.status(500).json({ message: err.message });
   }
 };
 
 /**
- * @desc    Get Expiry Distribution Report
- * @route   GET /api/reports/expiry
+ * @route GET /api/reports/expiry
+ * Bond/expiry distribution report — POs expiring soonest first
  */
 export const getExpiryReport = async (req, res) => {
   try {
-    const { page = 1, limit = 50, search = '' } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const take = parseInt(limit);
+    const { page, limit, search } = req.query;
+    const { skip, take, page: p, limit: l } = paginate(page, limit);
 
     const where = {
       bond_expiry_date: { not: null },
-      ...(search ? {
-        OR: [
-          { po_no: { contains: search, mode: 'insensitive' } },
-          { stock_no: { contains: search, mode: 'insensitive' } }
-        ]
-      } : {})
+      ...(search
+        ? {
+            OR: [
+              { po_no: { contains: search, mode: 'insensitive' } },
+              { stock_no: { contains: search, mode: 'insensitive' } },
+              { product_description: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
     };
 
-    const [total, inbounds] = await Promise.all([
+    const [total, items] = await Promise.all([
       prisma.inbound.count({ where }),
       prisma.inbound.findMany({
         where,
-        include: {
-          _count: {
-            select: { serialNumbers: { where: { status: { not: 'OUT_GATE' } } } }
-          }
-        },
         skip,
         take,
-        orderBy: { bond_expiry_date: 'asc' }
-      })
+        orderBy: { bond_expiry_date: 'asc' },
+        include: {
+          serialNumbers: {
+            where: { status: { not: 'OUT_GATE' } },
+            select: { id: true },
+          },
+        },
+      }),
     ]);
 
-    const reportData = inbounds.map(ib => ({
-      id: ib.id,
-      poNo: ib.po_no,
-      stockNo: ib.stock_no,
-      description: ib.product_description,
-      boxesAvailable: ib._count.serialNumbers,
-      totalQty: ib.quantity,
-      expiryDate: ib.bond_expiry_date,
-      location: ib.warehouse_location
-    }));
+    const data = items.map((ib) => {
+      const expiry = ib.bond_expiry_date;
+      const daysLeft = expiry
+        ? Math.ceil((new Date(expiry) - new Date()) / (1000 * 60 * 60 * 24))
+        : null;
 
-    res.json({
-      data: reportData,
-      pagination: {
-        total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(total / limit)
-      }
+      return {
+        id: ib.id,
+        poNo: ib.po_no,
+        stockNo: ib.stock_no ?? '—',
+        description: ib.product_description ?? '—',
+        boxesAvailable: ib.serialNumbers.length,
+        totalQty: ib.quantity,
+        expiryDate: expiry,
+        daysLeft,
+        location: ib.warehouse_location ?? '—',
+      };
     });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+
+    res.json({ data, pagination: { page: p, limit: l, total, totalPages: Math.ceil(total / l) } });
+  } catch (err) {
+    console.error('EXPIRY REPORT ERROR:', err);
+    res.status(500).json({ message: err.message });
   }
 };
 
 /**
- * @desc    Get Exception Report
- * @route   GET /api/reports/exceptions
+ * @route GET /api/reports/exceptions
+ * Full exception log — inbound + outbound, resolved + unresolved
  */
-export const getExceptionReport = async (req, res) => {
+export const getExceptionsReport = async (req, res) => {
   try {
-    const { page = 1, limit = 50, search = '' } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const take = parseInt(limit);
+    const { page, limit, search } = req.query;
+    const { skip, take, page: p, limit: l } = paginate(page, limit);
 
-    const where = search ? {
-      OR: [
-        { note: { contains: search, mode: 'insensitive' } },
-        { inbound: { po_no: { contains: search, mode: 'insensitive' } } },
-        { outboundLine: { outbound: { inbound: { po_no: { contains: search, mode: 'insensitive' } } } } }
-      ]
-    } : {};
+    const where = search
+      ? {
+          OR: [
+            { note: { contains: search, mode: 'insensitive' } },
+            { inbound: { po_no: { contains: search, mode: 'insensitive' } } },
+            { outboundLine: { outbound: { inbound: { po_no: { contains: search, mode: 'insensitive' } } } } },
+          ],
+        }
+      : {};
 
-    const [total, exceptions] = await Promise.all([
+    const [total, items] = await Promise.all([
       prisma.exception.count({ where }),
       prisma.exception.findMany({
         where,
-        include: {
-          inbound: true,
-          outboundLine: {
-            include: {
-              outbound: { include: { inbound: true } }
-            }
-          },
-          user: { select: { name: true } },
-          resolvedBy: { select: { name: true } }
-        },
         skip,
         take,
-        orderBy: { createdAt: 'desc' }
-      })
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: { select: { name: true } },
+          resolvedBy: { select: { name: true } },
+          inbound: { select: { po_no: true, stock_no: true, product_description: true, warehouse_location: true } },
+          outboundLine: {
+            include: {
+              outbound: {
+                include: {
+                  inbound: { select: { po_no: true, stock_no: true, product_description: true, warehouse_location: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
     ]);
 
-    const reportData = exceptions.map(ex => ({
-      id: ex.id,
-      poNo: ex.inbound?.po_no || ex.outboundLine?.outbound?.inbound?.po_no || 'N/A',
-      stockNo: ex.inbound?.stock_no || 'N/A',
-      flightNo: ex.outboundLine?.flightNo || 'N/A',
-      createdOn: ex.createdAt,
-      description: ex.note,
-      location: ex.inbound?.warehouse_location || 'N/A',
-      reportedBy: ex.user?.name,
-      status: ex.isResolved ? 'RESOLVED' : 'PENDING',
-      resolvedAt: ex.resolvedAt,
-      resolvedBy: ex.resolvedBy?.name,
-      resolvedNote: ex.resolvedNote
-    }));
+    const data = items.map((ex) => {
+      const ib = ex.inbound ?? ex.outboundLine?.outbound?.inbound;
+      return {
+        id: ex.id,
+        poNo: ib?.po_no ?? '—',
+        stockNo: ib?.stock_no ?? '—',
+        flightNo: ex.outboundLine?.flightNo ?? '—',
+        description: ib?.product_description ?? '—',
+        location: ib?.warehouse_location ?? '—',
+        createdOn: ex.createdAt,
+        reportedBy: ex.user?.name ?? '—',
+        status: ex.isResolved ? 'RESOLVED' : 'OPEN',
+        resolvedAt: ex.resolvedAt,
+        resolvedBy: ex.resolvedBy?.name ?? null,
+        note: ex.note,
+        type: ex.inboundId ? 'Inbound' : 'Outbound',
+      };
+    });
+
+    res.json({ data, pagination: { page: p, limit: l, total, totalPages: Math.ceil(total / l) } });
+  } catch (err) {
+    console.error('EXCEPTIONS REPORT ERROR:', err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/**
+ * @route GET /api/reports/movements  (dashboard date-range version — kept for compatibility)
+ */
+export const getMovementsByDate = async (req, res) => {
+  try {
+    const { shedId, startDate, endDate } = req.query;
+    if (!shedId) return res.status(400).json({ message: 'shedId is required' });
+
+    const start = new Date(startDate); start.setHours(0, 0, 0, 0);
+    const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
+
+    const inbounds = await prisma.inbound.findMany({
+      where: { serialNumbers: { some: { shedId: parseInt(shedId) } }, createdAt: { gte: start, lte: end } },
+      select: { id: true, po_no: true, awb_no: true, product_description: true, quantity: true, no_of_box: true, status: true, createdAt: true, assignedUser: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const outbounds = await prisma.outboundLine.findMany({
+      where: { outbound: { inbound: { serialNumbers: { some: { shedId: parseInt(shedId) } } } }, date: { gte: start, lte: end } },
+      include: { outbound: { include: { inbound: { select: { po_no: true, product_description: true } }, assignedUser: { select: { name: true } } } } },
+      orderBy: { date: 'desc' },
+    });
+
+    const inQty  = inbounds.reduce((s, i) => s + (i.quantity || 0), 0);
+    const outQty = outbounds.reduce((s, o) => s + (o.quantityIssued || 0), 0);
 
     res.json({
-      data: reportData,
-      pagination: {
-        total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(total / limit)
-      }
+      summary: { inboundPOs: inbounds.length, inboundQty: inQty, outboundLines: outbounds.length, outboundQty: outQty, netMovement: inQty - outQty, period: { start: startDate, end: endDate } },
+      inbounds: inbounds.map(i => ({ ref: i.po_no, awb: i.awb_no, desc: i.product_description, qty: i.quantity, boxes: i.no_of_box, status: i.status, user: i.assignedUser?.name || '—', date: i.createdAt, type: 'INBOUND' })),
+      outbounds: outbounds.map(o => ({ ref: o.outbound?.inbound?.po_no, flight: o.flightNo, sbNo: o.sbNo, desc: o.outbound?.inbound?.product_description, qty: o.quantityIssued, boxes: o.noOfBoxes, status: o.status, user: o.outbound?.assignedUser?.name || '—', date: o.date, type: 'OUTBOUND' })),
     });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };

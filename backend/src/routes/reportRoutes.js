@@ -1,12 +1,20 @@
 import express from 'express';
-import { getMovementReport, getExpiryReport, getExceptionReport } from '../controllers/reportController.js';
+import {
+  getMovementReport,
+  getExpiryReport,
+  getExceptionsReport,
+  getMovementsByDate,
+} from '../controllers/reportController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// All reports are protected and restricted to Admin/Global
-router.get('/movement', protect, getMovementReport);
-router.get('/expiry', protect, getExpiryReport);
-router.get('/exceptions', protect, getExceptionReport);
+// Reports page tabs
+router.get('/movement',   protect, getMovementReport);
+router.get('/expiry',     protect, getExpiryReport);
+router.get('/exceptions', protect, getExceptionsReport);
+
+// Dashboard date-range movement modal
+router.get('/movements',  protect, getMovementsByDate);
 
 export default router;

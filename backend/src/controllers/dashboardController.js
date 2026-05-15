@@ -12,15 +12,32 @@ export const getShedStats = async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // 1. Inbound/Outbound Today
-    const inboundToday = await prisma.serialNumber.count({
-      where: { 
-        shedId: sId,
+    // 1. Inbound/Outbound Today (real PO & line counts)
+    const inboundToday = await prisma.inbound.count({
+      where: {
+        warehouse_location: { not: null },
+        serialNumbers: { some: { shedId: sId } },
+        createdAt: { gte: today }
+      }
+    });
+
+    const inboundTodayQty = await prisma.inbound.aggregate({
+      _sum: { quantity: true },
+      where: {
+        serialNumbers: { some: { shedId: sId } },
         createdAt: { gte: today }
       }
     });
 
     const outboundToday = await prisma.outboundLine.count({
+      where: {
+        outbound: { inbound: { serialNumbers: { some: { shedId: sId } } } },
+        date: { gte: today }
+      }
+    });
+
+    const outboundTodayQty = await prisma.outboundLine.aggregate({
+      _sum: { quantityIssued: true },
       where: {
         outbound: { inbound: { serialNumbers: { some: { shedId: sId } } } },
         date: { gte: today }
@@ -37,57 +54,103 @@ export const getShedStats = async (req, res) => {
     });
     const capacityPercent = totalGrids > 0 ? (occupiedGrids / totalGrids) * 100 : 0;
 
-    // 3. Top Customers (Aggregated by Inbound PO or Outbound)
-    // We'll use Inbound for now as "Owners" of the stock
-    const customers = await prisma.inbound.groupBy({
-      by: ['awb_no'], // Using AWB or another field as a proxy for customer if not explicit
-      _sum: { no_of_box: true },
-      where: { serialNumbers: { some: { shedId: sId } } },
-      orderBy: { _sum: { no_of_box: 'desc' } },
+    // 3. PO-wise Stock (Top 5 by box count)
+    const poStock = await prisma.inbound.findMany({
+      where: { 
+        serialNumbers: { some: { shedId: sId, status: { not: 'OUT_GATE' } } } 
+      },
+      select: {
+        po_no: true,
+        no_of_box: true,
+        product_description: true
+      },
+      orderBy: { no_of_box: 'desc' },
       take: 5
     });
 
-    // 4. Latest Exceptions
+    // 4. Latest Unresolved Exceptions (Inbound & Outbound)
     const exceptions = await prisma.exception.findMany({
-      where: { inbound: { serialNumbers: { some: { shedId: sId } } } },
-      include: { user: { select: { name: true } }, inbound: { select: { po_no: true } } },
+      where: { 
+        isResolved: false,
+        OR: [
+          { inbound: { serialNumbers: { some: { shedId: sId } } } },
+          { outboundLine: { outbound: { inbound: { serialNumbers: { some: { shedId: sId } } } } } }
+        ]
+      },
+      include: { 
+        user: { select: { name: true } }, 
+        inbound: { select: { po_no: true } },
+        outboundLine: { 
+          include: { 
+            outbound: { 
+              include: { 
+                inbound: { select: { po_no: true } } 
+              } 
+            } 
+          } 
+        }
+      },
       orderBy: { createdAt: 'desc' },
       take: 5
     });
 
-    // 5. Grid Details for Digital Twin
+    // 5. Grid Details - fetch ALL boxes per grid (no limit)
     const grids = await prisma.grid.findMany({
       where: { shedId: sId },
       include: {
         serialNumbers: {
-          include: { inbound: { select: { po_no: true, product_description: true } } },
-          take: 1
+          where: { status: { not: 'OUT_GATE' } },
+          include: { inbound: { select: { po_no: true, product_description: true, no_of_box: true } } }
         }
       }
     });
 
     res.json({
       inboundToday,
+      inboundTodayQty: inboundTodayQty._sum.quantity || 0,
       outboundToday,
+      outboundTodayQty: outboundTodayQty._sum.quantityIssued || 0,
       totalGrids,
       occupiedGrids,
       capacityPercent: capacityPercent.toFixed(2),
-      topCustomers: customers.map(c => ({ name: c.awb_no || 'Unknown', volume: c._sum.no_of_box || 0 })),
+      topStock: poStock.map(s => ({ po: s.po_no, desc: s.product_description, boxes: s.no_of_box })),
       exceptions: exceptions.map(e => ({
         id: e.id,
-        receipt: e.inbound.po_no,
+        receipt: e.inbound ? e.inbound.po_no : (e.outboundLine?.outbound?.inbound?.po_no || 'N/A'),
+        type: e.inboundId ? 'Inbound' : 'Outbound',
         reason: e.note,
         action: 'View',
         createdAt: e.createdAt
       })),
-      gridDetails: grids.map(g => ({
-        id: g.id,
-        code: g.code,
-        x: g.x,
-        y: g.y,
-        z: g.z,
-        product: g.serialNumbers.length > 0 ? g.serialNumbers[0].inbound?.product_description || 'Occupied' : null
-      }))
+      gridDetails: grids.map(g => {
+        const sns = g.serialNumbers;
+        const totalBoxes = sns.length;
+
+        // Group boxes by PO
+        const poMap = {};
+        for (const sn of sns) {
+          const po = sn.inbound?.po_no || 'UNKNOWN';
+          const desc = sn.inbound?.product_description || 'Unknown Product';
+          if (!poMap[po]) poMap[po] = { po, desc, boxes: 0 };
+          poMap[po].boxes++;
+        }
+        const poBreakdown = Object.values(poMap);
+
+        return {
+          id: g.id,
+          code: g.code,
+          x: g.x,
+          y: g.y,
+          z: g.z,
+          occupied: totalBoxes > 0,
+          totalBoxes,
+          poCount: poBreakdown.length,
+          poBreakdown, // Array of { po, desc, boxes }
+          // For 3D viz — take primary PO
+          product: poBreakdown.length > 0 ? poBreakdown[0].desc : null,
+          po: poBreakdown.length > 0 ? poBreakdown[0].po : null,
+        };
+      })
     });
   } catch (error) {
     console.error('DASHBOARD STATS ERROR:', error);
